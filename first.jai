@@ -20,24 +20,42 @@ build :: () {
         
         w := compiler_create_workspace(it.name);
         set_build_options(options, w);
-    
-        compiler_begin_intercept(w);
-    
+        
+        slot := get_workspace_slot(w);
+
+        compiler_begin_intercept(w, .SKIP_ALL);
+
         add_build_file(tprint("%/%", it.name, it.main), w);
-    
-        failed := false;
-        while true {
-            message := compiler_wait_for_message();
-            if message.workspace != w continue;
-            if message.kind == .COMPLETE {
-                m := cast(*Message_Complete) message;
-                if m.error_code == .COMPILATION_FAILED then failed = true;
-                break;
-            }
-        }
-    
-        compiler_end_intercept(w);
     }
+
+    completed := workspaces.count;
+    failed := false;
+    while completed > 0 {
+        message := compiler_wait_for_message();
+        slot := get_workspace_slot(message.workspace, false);
+        if !slot continue;
+        if message.kind == .COMPLETE {
+            m := cast(*Message_Complete) message;
+            if m.error_code == .COMPILATION_FAILED then failed = true;
+            slot.workspace = 0;
+            completed -= 1;
+            compiler_end_intercept(message.workspace);
+        }
+    }
+}
+
+get_workspace_slot :: (w: Workspace, allocate := true) -> *Workspace_Data {
+    assert(w != 0);
+    slot: *Workspace_Data;
+    for * workspaces {
+        if !slot && !it.workspace slot = it;
+        if it.workspace == w return it;
+    }
+    if allocate {
+        assert(slot != null);
+        slot.workspace = w;
+    }
+    return slot;
 }
 
 Day :: struct {
@@ -45,11 +63,18 @@ Day :: struct {
     main: string;
 }
 
+Workspace_Data :: struct {
+    workspace: Workspace;
+}
+
 days :: Day.[
     .{ name = "day1", main = "main.jai" },
     .{ name = "day2", main = "main.jai" },
     .{ name = "day3", main = "main.jai" },
+    .{ name = "day4", main = "main.jai" },
 ];
+
+workspaces: [days.count] Workspace_Data;
 
 #import "Compiler";
 #import "Basic";
